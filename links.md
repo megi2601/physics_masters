@@ -28,3 +28,11 @@ Your dataset contains information about futures contracts in the stock market. H
     Volume – The total number of contracts traded during the time period.
 
     Oi (Open Interest) – The total number of outstanding futures contracts that have not been settled (higher OI suggests more liquidity and interest in that contract).
+
+
+    indeksy gics do klasyfikacji spółek
+
+
+    log return 
+
+    lop(p t) - log(p t-1) (incl nan)
