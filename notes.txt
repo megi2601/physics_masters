@@ -1,9 +1,0 @@
-wyrzucić kwantyle spróbować 3sigma
-
-regresja na pierwszej wartości własnej
-(z uśrednianiem)
-
-istotność wartości własnych macierzy korelacji (marczenko-pasteur)
-
-
-zrobić całościowe daily data
