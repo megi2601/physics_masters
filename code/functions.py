@@ -121,10 +121,13 @@ def concat_dfs_by_date(dataframes, min_non_na_fraction_col = 0.85, start_year = 
     return df_concat
 
 
-def LI(df, tau_list, gaussianize_I=False):  # influence shifted forward by tau! 
+def LI(df, tau_list, gaussianize_I=False, use_index=None):  # influence shifted forward by tau! 
     LI_tau = []
 
-    I = df.mean(axis=1)
+    if use_index is not None:
+        I = use_index
+    else:
+        I = df.mean(axis=1)
     if gaussianize_I:
         I = gaussianize(I)
 
@@ -139,11 +142,14 @@ def LI(df, tau_list, gaussianize_I=False):  # influence shifted forward by tau!
         LI_tau.append(corr_mean/I2_mean)
     return pd.Series(LI_tau, index=tau_list, name='LI_tau')
 
-def Lsigma(df, tau_list, gaussianize_I=False):
+def Lsigma(df, tau_list, gaussianize_I=False, use_index=None):
     # df = df.copy().dropna()
     Lsigma_tau = []
 
-    I = df.mean(axis=1)
+    if use_index is not None:
+        I = use_index
+    else:
+        I = df.mean(axis=1)
     if gaussianize_I:
         I = gaussianize(I)
     I2 = I**2
@@ -172,12 +178,15 @@ def rho(df):
     return rho_t
 
 
-def Lrho(df, tau_list, gaussianize_I=False):
+def Lrho(df, tau_list, gaussianize_I=False, use_index=None):
     # df = df.copy().dropna()
 
     Lrho_tau = []
 
-    I = (df).mean(axis=1)
+    if use_index is not None:
+        I = use_index
+    else:
+        I = df.mean(axis=1)
     if gaussianize_I:
         I = gaussianize(I)
     I2 = I**2
@@ -193,13 +202,13 @@ def Lrho(df, tau_list, gaussianize_I=False):
         Lrho_tau.append(corr_mean/I2_mean)
     return pd.Series(Lrho_tau, index=tau_list, name='Lrho_tau')
 
-def plot(df, fig, ax, gaussianize_I=False):
+def plot(df, fig, ax, gaussianize_I=False, use_index=None):
     tau_list = np.arange(1, 250, 1)
     rho_0 = rho(df).mean()
     sigma2_0 = (df**2).mean(axis=1).mean()
-    LI_vals = LI(df, tau_list, gaussianize_I)
-    Lsigma_vals = Lsigma(df, tau_list, gaussianize_I)
-    Lrho_vals = Lrho(df, tau_list, gaussianize_I)
+    LI_vals = LI(df, tau_list, gaussianize_I, use_index)
+    Lsigma_vals = Lsigma(df, tau_list, gaussianize_I, use_index)
+    Lrho_vals = Lrho(df, tau_list, gaussianize_I, use_index)
     LI_vals.plot(ax=ax[1], label=r'$L_I$', color='black', lw=0.8)
     (Lsigma_vals*rho_0).plot(ax=ax[0], label=r'$L_{\sigma}\rho_0$', color='red', lw=0.7)
     (Lrho_vals*sigma2_0).plot(ax=ax[0], label=r'$L_{\rho}\sigma_0^2$', color='blue', lw=0.7)
