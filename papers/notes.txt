@@ -1,0 +1,29 @@
+- zgłębienie random matrix theory (coś konkretnego zamiast symulacji, poprawność symulacji, istotność stałej macierzy korelacji etc)
+- clustrowanie macierzy korelacji - metody, interpretacja etc
+- indeksy w 'sektorach' C (np tylko banki) - powinno wyjść ze korelacje są większe
+
+abstract prompt:
+Facts:
+*investors try to predict future market movements to get ahead, maximize gain and minimize risk
+*correlations play crucial role in constructing diversified portfolio
+
+Current knowledge:
+* there is 'leverage effect': decline in price of an asset is associated with increased future realised volatility 
+* this is not the whole story: for an index, its volatility is greater than averaged volatility of its components, because correlations between assets also contribute 
+
+
+Idea+Methods:
+* take daily data from polish stock market from 2010-2024 (prices of stocks)
+* construct a simple index by averaging prices 
+* regres index volatility, average stock volatility and average correlations between stock on parameter: previous value of index return (analyse for different time lags between 1 and 200 days)
+* examine how avg stock volatility and avg corr contribute to total index volatility
+* check if regression on standard index WIG gives more or less predictive power 
+* move on to correlations: use principal regression analysis (I will insert an equation) to examine correlations as a time and time lag dependent matrix, not just stationary
+*analyse eigenvalues and eigenvectors of prev index return dependent "corr matrix" to examine market movements 
+
+Results:
+* so far I see that polish stock exchange behaves differently than american stock exchange, correlations are lower but still significant
+
+Impact:
+*good to know how these studied things are behaving on polish stock market
+*one can devise more sophisticated methods tailored for polish after examining the basics
