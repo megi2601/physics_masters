@@ -34,53 +34,48 @@ def load_data_foreign(index, data_parent_dir):
         dataframes.append(df)
     return dataframes
 
-# def concat_dfs_by_date(dataframes, len_quantile = 0.85, statr_year = 2010, outliers_quantiles = (0.995, 0.005)):
-#     df_concat = pd.concat(dataframes, axis=1)
-#     df_concat.index = df_concat.index.astype(dataframes[0].index.dtype)
-    
-#     if statr_year:
-#         # only stocks withing the desired time period
-#         df_concat = df_concat[statr_year:] #from start_year
-#         df_concat = df_concat.loc[:, (df_concat.iloc[-1].notna() | df_concat.iloc[-2].notna())] #to present
+def adjust_for_inflation(df, cpi_file_name):
+    df_cpi = pd.read_csv(f'C:/physics_masters/data/consumer_price_index/{cpi_file_name}', parse_dates=['date'], index_col=0)
 
-#     if len_quantile:
-#         # only stocks with many time points
-#         q = df_concat.count().quantile(len_quantile).astype(int)
-#         df_concat = df_concat.loc[:, df_concat.count() >= q]
+    cpi_daily = df_cpi.resample('D').ffill()
 
-#     # calculate daily returns
-#     df_concat = df_concat.pct_change(fill_method=None) # confirmed that this should not be diff
-    
-#     if outliers_quantiles:
-#         # remove outliers
-#         qhigh = df_concat.quantile(outliers_quantiles[0], axis=0)
-#         qlow = df_concat.quantile(outliers_quantiles[1], axis=0)
-        
-#         for col in df_concat.columns:
-#             df_concat.loc[df_concat[col] > qhigh[col], col] = np.nan
-#             df_concat.loc[df_concat[col] < qlow[col], col] = np.nan
+    # 2. Align CPI to the date range of price data
+    cpi_daily = cpi_daily.reindex(df.index, method='ffill')
 
-#     # fill any missing values with last known value
-#     df_concat.ffill(inplace=True)
-    
-#     df_concat = (df_concat - df_concat.mean()) /df_concat.std() # normalization
-#     return df_concat
+    # 3. Rebase to the earliest date in df_concat
+    earliest_date = df.index.min()
+    cpi_base_value = cpi_daily.loc[earliest_date, 'CPI']
+    cpi_factor = cpi_base_value / cpi_daily['CPI']
 
-def concat_dfs_by_date(dataframes, min_non_na_fraction_col = 0.85, start_year = '2010', extreme_return_abs = 5, last_traded = True, min_non_na_fraction_row = 0.6, smooth_local_volatility = True):
+    # 4. Adjust for inflation
+    df_real = df.multiply(cpi_factor, axis=0)
+    return df_real    
+
+
+def concat_and_select(dataframes, min_non_na_fraction_col = 0.85, start_date = '2010', end_date='06-2024', extreme_return_abs = 2., min_non_na_fraction_row = 0.6, cpi_file=None):
     df_concat = pd.concat(dataframes, axis=1)
     df_concat.index = df_concat.index.astype(dataframes[0].index.dtype)
     df_concat.sort_index(inplace=True)
 
     # YEAR RANGE
-    if start_year:
-        # only stocks withing the desired time period
-        df_concat = df_concat[start_year:] #from start_year
+    if start_date:
+        # only stocks within the desired time period
+        df_concat = df_concat[start_date:] #from start_date
+
+    if end_date:
+        # only stocks within the desired time period
+        df_concat = df_concat[:end_date] #to end_date
 
     old_shape = df_concat.shape
 
+    if cpi_file:
+        df_concat = adjust_for_inflation(df_concat, cpi_file)
+
+
     # STOCKS SELECTION
-    if last_traded:
-        df_concat = df_concat.loc[:, df_concat.tail(30).notna().any()] #require to have at least one value in the last 30 days
+
+    df_concat = df_concat.loc[:, df_concat.head(30).notna().any()] #require to have at least one value in the first 30 days
+    df_concat = df_concat.loc[:, df_concat.tail(30).notna().any()] #require to have at least one value in the last 30 days
     
     if min_non_na_fraction_col :
         # only stocks with many sufficiently many time points
@@ -94,21 +89,9 @@ def concat_dfs_by_date(dataframes, min_non_na_fraction_col = 0.85, start_year = 
         df_concat = df_concat[df_concat.count(axis=1) > threshold] 
     
     # DATA MANIPULATION
-    # calculate daily returns
-    df_diff = df_concat.diff() #pct_change(fill_method=None) # confirmed that this should not be diff
-    
-    # remove outliers (eg. splits)    
-    df_diff = df_diff.mask((df_concat.pct_change(fill_method=None).abs() > extreme_return_abs))
-    
-    # reduce local volatility
-    if smooth_local_volatility:
-        rolling_std = df_concat.rolling(window='30D', min_periods=10).std()
-        df_concat = df_diff/rolling_std
-    else:
-        df_concat = df_diff
-
-    # normalize    
-    df_concat = (df_concat - df_concat.mean()) /df_concat.std()
+    if extreme_return_abs is not None:
+        price_ratio = df_concat / df_concat.shift(1)
+        df_concat[(price_ratio > extreme_return_abs) | (price_ratio < 1 / extreme_return_abs)] = np.nan
 
     new_shape = df_concat.shape
 
@@ -116,18 +99,40 @@ def concat_dfs_by_date(dataframes, min_non_na_fraction_col = 0.85, start_year = 
     print(f'% of dates remaining: {new_shape[0]/old_shape[0]:.2%}')
     print(f'Number of stocks: {new_shape[1]}')
     print(f'Number of dates: {new_shape[0]}')
-    print(f'% of nans: {df_concat.isna().sum().sum()/df_concat.size:.2%}')
-    
+
     return df_concat
 
+def calculate_returns(df_concat, smoothed=False):
+    
+    # reduce local volatility
+    if smoothed:
+        rolling_std = df_concat.rolling(window='30D', min_periods=10).std()
+        df_concat = df_concat / rolling_std
+    
+    df_diff = df_concat.diff()
+    #df_diff = np.log(df_concat/df_concat.shift(1))
+    #df_diff = df_concat.pct_change(fill_method=None)
 
-def LI(df, tau_list, gaussianize_I=False, use_index=None):  # influence shifted forward by tau! 
+    # normalize    
+    df_diff = (df_diff - df_diff.mean()) /df_diff.std()
+
+    print(f'% of nans: {df_diff.isna().sum().sum()/df_concat.size:.2%}')
+    
+    #calculate index returns
+    #index_series = df_concat.mean(axis=1)
+    #index_returns = np.log(index_series/index_series.shift(1))
+    #index_returns = (index_returns-index_returns.mean())/index_returns.std()
+
+    index_returns = df_diff.mean(axis=1)
+
+    return df_diff, index_returns
+
+
+def LI(df_stocks, index_series, tau_list, gaussianize_I=False):  # influence shifted forward by tau! 
     LI_tau = []
 
-    if use_index is not None:
-        I = use_index
-    else:
-        I = df.mean(axis=1)
+    I = index_series
+
     if gaussianize_I:
         I = gaussianize(I)
 
@@ -142,14 +147,12 @@ def LI(df, tau_list, gaussianize_I=False, use_index=None):  # influence shifted 
         LI_tau.append(corr_mean/I2_mean)
     return pd.Series(LI_tau, index=tau_list, name='LI_tau')
 
-def Lsigma(df, tau_list, gaussianize_I=False, use_index=None):
+def Lsigma(df_stocks, index_series, tau_list, gaussianize_I=False):
     # df = df.copy().dropna()
     Lsigma_tau = []
 
-    if use_index is not None:
-        I = use_index
-    else:
-        I = df.mean(axis=1)
+    I = index_series
+
     if gaussianize_I:
         I = gaussianize(I)
     I2 = I**2
@@ -158,13 +161,12 @@ def Lsigma(df, tau_list, gaussianize_I=False, use_index=None):
 
         I2_mean = I2.shift(periods=tau).mean() # I2_mean = I2.shift(periods=-tau).mean()
 
-        corr_mean = (I.shift(periods=tau) * (df**2).mean(axis=1)).mean()
+        corr_mean = (I.shift(periods=tau) * (df_stocks**2).mean(axis=1)).mean()
 
         Lsigma_tau.append(corr_mean/I2_mean)
     return pd.Series(Lsigma_tau, index=tau_list, name='Lsigma_tau')
 
 def rho(df):
-    # df = df.copy().dropna()
 
     N = df.count(axis=1) # for some dates there are nans
     I = df.mean(axis=1) 
@@ -178,20 +180,17 @@ def rho(df):
     return rho_t
 
 
-def Lrho(df, tau_list, gaussianize_I=False, use_index=None):
-    # df = df.copy().dropna()
+def Lrho(df_stocks, index_series, tau_list, gaussianize_I=False):
 
     Lrho_tau = []
 
-    if use_index is not None:
-        I = use_index
-    else:
-        I = df.mean(axis=1)
+    I = index_series
+
     if gaussianize_I:
         I = gaussianize(I)
     I2 = I**2
 
-    rho_vals = rho(df)
+    rho_vals = rho(df_stocks)
 
     for tau in tau_list:    
         
@@ -202,13 +201,22 @@ def Lrho(df, tau_list, gaussianize_I=False, use_index=None):
         Lrho_tau.append(corr_mean/I2_mean)
     return pd.Series(Lrho_tau, index=tau_list, name='Lrho_tau')
 
-def plot(df, fig, ax, gaussianize_I=False, use_index=None):
+def calculate_correlation_functions(df_stocks, index_series, gaussianize_I=False):
     tau_list = np.arange(1, 250, 1)
-    rho_0 = rho(df).mean()
-    sigma2_0 = (df**2).mean(axis=1).mean()
-    LI_vals = LI(df, tau_list, gaussianize_I, use_index)
-    Lsigma_vals = Lsigma(df, tau_list, gaussianize_I, use_index)
-    Lrho_vals = Lrho(df, tau_list, gaussianize_I, use_index)
+
+    rho_0 = rho(df_stocks).mean()
+    sigma2_0 = (df_stocks**2).mean(axis=1).mean()
+    I2_mean = (index_series**2).mean()
+
+    LI_vals = LI(df_stocks, index_series, tau_list, gaussianize_I)
+    Lsigma_vals = Lsigma(df_stocks, index_series, tau_list, gaussianize_I)
+    Lrho_vals = Lrho(df_stocks, index_series, tau_list, gaussianize_I)
+
+    return tau_list, LI_vals, Lsigma_vals, Lrho_vals, sigma2_0, rho_0, I2_mean
+
+
+def plot_correlation_functions(data, fig, ax):
+    tau_list, LI_vals, Lsigma_vals, Lrho_vals, sigma2_0, rho_0, I2_mean = data
     LI_vals.plot(ax=ax[1], label=r'$L_I$', color='black', lw=0.8)
     (Lsigma_vals*rho_0).plot(ax=ax[0], label=r'$L_{\sigma}\rho_0$', color='red', lw=0.7)
     (Lrho_vals*sigma2_0).plot(ax=ax[0], label=r'$L_{\rho}\sigma_0^2$', color='blue', lw=0.7)
@@ -217,10 +225,8 @@ def plot(df, fig, ax, gaussianize_I=False, use_index=None):
 
     fig.legend(loc='lower center')
 
-    I2_mean = (((df).mean(axis=1))**2).mean()
     print(f'<I^2> = {I2_mean:.4f}')
     print(f'rho_0*sigma2_0 = {rho_0*sigma2_0:.4f}')
-    print(f'rhomean = {rho_0:.4f}, rhostd = {rho(df).std():.4f}')
 
 
 def gaussianize(I):
