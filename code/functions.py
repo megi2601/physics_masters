@@ -102,20 +102,25 @@ def concat_and_select(dataframes, min_non_na_fraction_col = 0.85, start_date = '
 
     return df_concat
 
-def calculate_returns(df_concat, smoothed=False):
-    
+def calculate_returns(df_concat, type='diff', smoothed=False):      #diff, log or pct_change    
+    if type=='diff':
+        df_diff = df_concat.diff()
+        # df_diff = (df_diff - df_diff.mean()) /df_diff.std()
+        # index_returns = df_diff.mean(axis=1)
+
+    elif type == 'log':
+        df_diff = np.log(df_concat).diff()
+
+    elif type == 'pct_change':
+        df_diff = df_concat.pct_change(fill_method=None)
+  
     # reduce local volatility
     if smoothed:
         rolling_std = df_concat.rolling(window='30D', min_periods=10).std()
-        df_concat = df_concat / rolling_std
-    
-    df_diff = df_concat.diff()
-    #df_diff = np.log(df_concat/df_concat.shift(1))
-    #df_diff = df_concat.pct_change(fill_method=None)
+        df_diff = df_diff / rolling_std
 
-    # normalize    
     df_diff = (df_diff - df_diff.mean()) /df_diff.std()
-
+  
     print(f'% of nans: {df_diff.isna().sum().sum()/df_concat.size:.2%}')
     
     #calculate index returns
@@ -140,7 +145,7 @@ def LI(df_stocks, index_series, tau_list, gaussianize_I=False):  # influence shi
 
     for tau in tau_list:        
 
-        I2_mean = I2.shift(periods=tau).mean() # I2_mean = I2.shift(periods=-tau).mean()
+        I2_mean = I2.shift(periods=tau).mean() 
 
         corr_mean = (I.shift(periods=tau) * I2).mean()
 
@@ -222,11 +227,16 @@ def plot_correlation_functions(data, fig, ax):
     (Lrho_vals*sigma2_0).plot(ax=ax[0], label=r'$L_{\rho}\sigma_0^2$', color='blue', lw=0.7)
     ax[0].set_xlabel(r'$\tau$')
     ax[1].set_xlabel(r'$\tau$')
+    ax[0].set_ylabel('Adjusted regression coefficients')
+    ax[1].set_ylabel('Regression coefficients')
 
-    fig.legend(loc='lower center')
+    ax[0].legend(loc='lower right')
+    ax[1].legend(loc='lower right')
 
     print(f'<I^2> = {I2_mean:.4f}')
     print(f'rho_0*sigma2_0 = {rho_0*sigma2_0:.4f}')
+    print(f'rho_0 = {rho_0:.4f}, sigma2_0 = {sigma2_0:.4f}')
+
 
 
 def gaussianize(I):

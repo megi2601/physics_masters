@@ -27,3 +27,12 @@ Results:
 Impact:
 *good to know how these studied things are behaving on polish stock market
 *one can devise more sophisticated methods tailored for polish after examining the basics
+
+
+volatility -> fluctuations
+portfolio -> only risk management
+are followed -> towarzyszą 
+
+still influential NEGATIVE correlations
+
+sama volatility powinna mieć długą autokorelacje
