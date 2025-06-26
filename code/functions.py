@@ -5,13 +5,16 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 import scipy as sp
 from scipy.stats import norm
+from scipy.optimize import curve_fit
+
+
 
 def load_data_pol(dir):
     dataframes = []
     for filename in os.listdir(dir):
         path = os.path.join(dir, filename)
         name = filename.replace('.prn', '')
-        if 'WIG' in name:
+        if 'WIG' in name or 'GPW' in name or 'ETF' in name or name=='':
             continue
         df = pd.read_csv(path, delimiter=',', header=0, parse_dates=['Date'], usecols=['Date', 'Close'])
         df.set_index('Date', inplace=True)
@@ -52,7 +55,7 @@ def adjust_for_inflation(df, cpi_file_name):
     return df_real    
 
 
-def concat_and_select(dataframes, min_non_na_fraction_col = 0.85, start_date = '2010', end_date='06-2024', extreme_return_abs = 2., min_non_na_fraction_row = 0.6, cpi_file=None):
+def concat_and_select(dataframes, min_non_na_fraction_col = 0.85, start_date = '2010', end_date='06-2024', extreme_return_abs = 3., min_non_na_fraction_row = 0.6, cpi_file=None):
     df_concat = pd.concat(dataframes, axis=1)
     df_concat.index = df_concat.index.astype(dataframes[0].index.dtype)
     df_concat.sort_index(inplace=True)
@@ -74,8 +77,8 @@ def concat_and_select(dataframes, min_non_na_fraction_col = 0.85, start_date = '
 
     # STOCKS SELECTION
 
-    df_concat = df_concat.loc[:, df_concat.head(30).notna().any()] #require to have at least one value in the first 30 days
-    df_concat = df_concat.loc[:, df_concat.tail(30).notna().any()] #require to have at least one value in the last 30 days
+    # df_concat = df_concat.loc[:, df_concat.head(30).notna().any()] #require to have at least one value in the first 30 days
+    # df_concat = df_concat.loc[:, df_concat.tail(30).notna().any()] #require to have at least one value in the last 30 days
     
     if min_non_na_fraction_col :
         # only stocks with many sufficiently many time points
@@ -126,9 +129,10 @@ def calculate_returns(df_concat, type='diff', smoothed=False):      #diff, log o
     #calculate index returns
     #index_series = df_concat.mean(axis=1)
     #index_returns = np.log(index_series/index_series.shift(1))
-    #index_returns = (index_returns-index_returns.mean())/index_returns.std()
 
     index_returns = df_diff.mean(axis=1)
+    #index_returns = np.log(df_concat.mean(axis=1)).diff()
+    #index_returns = (index_returns - index_returns.mean()) / index_returns.std()
 
     return df_diff, index_returns
 
@@ -164,7 +168,7 @@ def Lsigma(df_stocks, index_series, tau_list, gaussianize_I=False):
 
     for tau in tau_list:        
 
-        I2_mean = I2.shift(periods=tau).mean() # I2_mean = I2.shift(periods=-tau).mean()
+        I2_mean = I2.shift(periods=tau).mean() 
 
         corr_mean = (I.shift(periods=tau) * (df_stocks**2).mean(axis=1)).mean()
 
@@ -207,7 +211,7 @@ def Lrho(df_stocks, index_series, tau_list, gaussianize_I=False):
     return pd.Series(Lrho_tau, index=tau_list, name='Lrho_tau')
 
 def calculate_correlation_functions(df_stocks, index_series, gaussianize_I=False):
-    tau_list = np.arange(1, 250, 1)
+    tau_list = np.arange(1, 200, 1)
 
     rho_0 = rho(df_stocks).mean()
     sigma2_0 = (df_stocks**2).mean(axis=1).mean()
@@ -219,24 +223,74 @@ def calculate_correlation_functions(df_stocks, index_series, gaussianize_I=False
 
     return tau_list, LI_vals, Lsigma_vals, Lrho_vals, sigma2_0, rho_0, I2_mean
 
+def exp_decay_with_offset(tau, A, tau_c, B):
+    return A * np.exp(-tau / tau_c) + B
 
+# def plot_correlation_functions(data, fig, ax):
+#     tau_list, LI_vals, Lsigma_vals, Lrho_vals, sigma2_0, rho_0, I2_mean = data
+#     LI_vals.plot(ax=ax[1], label=r'$L_I$', color='black', lw=0.8)
+#     (Lsigma_vals*rho_0).plot(ax=ax[0], label=r'$L_{\sigma}\rho_{0}$', color='red', lw=0.7)
+#     (Lrho_vals*sigma2_0).plot(ax=ax[0], label=r'$L_{\rho}\sigma_0^2$', color='blue', lw=0.7)
+#     ax[0].set_xlabel(r'$\tau$')
+#     ax[1].set_xlabel(r'$\tau$')
+#     ax[0].set_ylabel('Adjusted regression coefficients')
+#     ax[1].set_ylabel('Regression coefficients')
+
+#     ax[0].legend(loc='lower right')
+#     ax[1].legend(loc='lower right')
+
+#     print(f'<I^2> = {I2_mean:.4f}')
+#     print(f'rho_0*sigma2_0 = {rho_0*sigma2_0:.4f}')
+#     print(f'rho_0 = {rho_0:.4f}, sigma2_0 = {sigma2_0:.4f}')
 def plot_correlation_functions(data, fig, ax):
     tau_list, LI_vals, Lsigma_vals, Lrho_vals, sigma2_0, rho_0, I2_mean = data
-    LI_vals.plot(ax=ax[1], label=r'$L_I$', color='black', lw=0.8)
-    (Lsigma_vals*rho_0).plot(ax=ax[0], label=r'$L_{\sigma}\rho_0$', color='red', lw=0.7)
-    (Lrho_vals*sigma2_0).plot(ax=ax[0], label=r'$L_{\rho}\sigma_0^2$', color='blue', lw=0.7)
+    tau_array = np.array(tau_list)
+
+    # --- Plot L_I ---
+    LI_vals.plot(ax=ax[1], label=r'$\mathcal{L}_I$', color='black', lw=0.8, alpha=0.5)
+    try:
+        popt_LI, _ = curve_fit(exp_decay_with_offset, tau_array, LI_vals.values, p0=(-1.0, 1.0, 0.0))
+        fit_LI = exp_decay_with_offset(tau_array, *popt_LI)
+        ax[1].plot(tau_array, fit_LI, 'k--', lw=1,
+                   label=fr'Exp. decay fit')
+    except RuntimeError:
+        print("Fit failed for LI")
+
+    # --- Plot adjusted L_sigma * rho_0 ---
+    adjusted_Lsigma = Lsigma_vals * rho_0
+    adjusted_Lsigma.plot(ax=ax[0], label=r'$\mathcal{L}_{\sigma}\rho_{0}$', color='red', lw=0.7, alpha=0.5)
+    try:
+        popt_Lsigma, _ = curve_fit(exp_decay_with_offset, tau_array, adjusted_Lsigma.values, p0=(-1.0, 1.0, 0.0))
+        fit_Lsigma = exp_decay_with_offset(tau_array, *popt_Lsigma)
+        ax[0].plot(tau_array, fit_Lsigma, 'r--', lw=1,
+                   label=fr'Exp. decay fit')
+    except RuntimeError:
+        print("Fit failed for L_sigma")
+
+    # --- Plot adjusted L_rho * sigma2_0 ---
+    adjusted_Lrho = Lrho_vals * sigma2_0
+    adjusted_Lrho.plot(ax=ax[0], label=r'$\mathcal{L}_{\rho}\sigma_0^2$', color='blue', lw=0.7, alpha=0.5)
+    try:
+        popt_Lrho, _ = curve_fit(exp_decay_with_offset, tau_array, adjusted_Lrho.values, p0=(-1.0, 1.0, 0.0))
+        fit_Lrho = exp_decay_with_offset(tau_array, *popt_Lrho)
+        ax[0].plot(tau_array, fit_Lrho, 'b--', lw=1,
+                   label=fr'Exp. decay fit')
+    except RuntimeError:
+        print("Fit failed for L_rho")
+
+    # Axis labels and legends
     ax[0].set_xlabel(r'$\tau$')
     ax[1].set_xlabel(r'$\tau$')
     ax[0].set_ylabel('Adjusted regression coefficients')
-    ax[1].set_ylabel('Regression coefficients')
+    ax[1].set_ylabel('Regression coefficient')
 
     ax[0].legend(loc='lower right')
     ax[1].legend(loc='lower right')
 
+    # Print diagnostic info
     print(f'<I^2> = {I2_mean:.4f}')
-    print(f'rho_0*sigma2_0 = {rho_0*sigma2_0:.4f}')
+    print(f'rho_0*sigma2_0 = {rho_0 * sigma2_0:.4f}')
     print(f'rho_0 = {rho_0:.4f}, sigma2_0 = {sigma2_0:.4f}')
-
 
 
 def gaussianize(I):
