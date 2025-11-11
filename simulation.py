@@ -2,6 +2,9 @@ from dwave.samplers import SimulatedAnnealingSampler
 import pandas as pd
 import itertools
 import numpy as np
+import multiprocessing as mp
+from functools import partial
+from tqdm import tqdm  # for progress bar
 
 # pip install dwave-ocean-sdk pandas numpy dimod
 
@@ -123,31 +126,43 @@ def stN(solution):
 
 #############################################################################################
 
-N = np.array([16, 32, 64, 128, 256, 512])
-beta_start = 10
-beta_end = 1000
-
-#############################################################################################
-
-for i in [3, 4]:
-    i=3
+def run_simulation(i, N, beta_start, beta_end):
     n = N[i]
-
     sampler = SimulatedAnnealingSampler()
     Q = build_qubo(n)
 
     params = {
-        'num_reads': 1000,
+        'num_reads': 200,
         'randomize_order': True,
         'beta_range': [beta_start, beta_end],
-        'num_sweeps': (n//16) * 2 * 2**(i-2) * 1000
+        'num_sweeps': (n // 16) * 2 * 2**(i-2) * 1000
     }
+
+    print(f"[Process {i}] Starting N={n}...")
     samples, energies = solve_bqm(Q, sampler, params)
     stNs = np.array([stN(sample) for sample in samples])
 
-    df = pd.DataFrame({'final_configuration': ["".join(s.astype(str)) for s in samples], 'E': energies, 'stN': stNs})
-    
-    (df[['E', 'stN']]).to_csv(f'simulated_annealing_N{n}_summary_short.csv', index=False)
-
+    df = pd.DataFrame({
+        'final_configuration': ["".join(s.astype(str)) for s in samples],
+        'E': energies,
+        'stN': stNs
+    })
+    df[['E', 'stN']].to_csv(f'simulated_annealing_N{n}_summary_short.csv', index=False)
     df.to_csv(f'simulated_annealing_N{n}.csv', index=False)
+    print(f"[Process {i}] Finished N={n}")
+
+
+
+
+#########################################33
+if __name__ == "__main__":
+    N = np.array([16, 32, 64, 128, 256, 512])
+    beta_start, beta_end = 10, 1000
+
+    indices = [4]  # your selection
+    with mp.Pool(processes=6) as pool:  # Use all 6 cores
+        list(tqdm(pool.imap_unordered(
+            partial(run_simulation, N=N, beta_start=beta_start, beta_end=beta_end),
+            indices
+        ), total=len(indices)))
 
